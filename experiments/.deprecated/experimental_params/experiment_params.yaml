@@ -1,0 +1,59 @@
+
+initial_position:
+  he_range: [-3, 3] # in degrees
+  cte_range: [-0.5, .5] # in meters
+
+num_episodes: 1
+
+weather_types: [0, 1, 2, 3, 4] # see simulator params for labels
+
+ood:
+  corruption:
+    - "None"
+    - "Noise"
+    - "Rain"
+    - "Motion Blur"
+    - "Rain and Motion Blur"
+    - "Snow"
+    - "Snowing"
+  transient_time_range: 
+    start_time_range: [20,25] # episode time in seconds, entire episode duration if undefined
+    end_time_range: [35,40] # episode time in seconds, entire episode duration if undefined
+    buildup_time_range: [5,5] # duration in seconds, instantaneous if undefined
+  experiment_time_range: [8,18] # time in hours
+
+controller:
+  type: "xplane_controller"
+  steering: 
+    P: -0.015
+    I: -0.00
+    D: -0.00
+    he_ratio: .5
+    bias: 0.008
+    input_constraints: [-1, 1]
+  speed:
+    low_u: 0.0
+    high_u: 0.2
+    nominal_u: 0.1
+    low_speed: 3.0
+    high_speed: 5.0
+    input_constraints: [0, 1]
+
+logging:
+  log_data: False
+  use_wandb: False
+  normalization:
+    cte_constant: 10.0
+    he_constant: 30.0
+
+debug:
+  perception: True
+
+state_estimation:
+  estimator: "taxinet"
+  model_file: "data/models/taxinet03-09_12-55.pt"
+
+runtime_monitor:
+  monitor: "autoencoder"
+  model_file: "data/models/taxinet-autoencoder03-21_14-21.pt"
+  threshold: 1.8
