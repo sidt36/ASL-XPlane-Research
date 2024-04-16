@@ -26,6 +26,7 @@ def dynamics(state, control, params):
     statep_partial = bmv(params["Wx"], dynamic_states) + bmv(params["Wu"], control) + params["b"]
 
     statep = jaxm.cat([jaxm.stack([xp, yp]), statep_partial])
+    
     return state + dt * statep
 
 
