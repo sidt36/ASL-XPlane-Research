@@ -127,7 +127,6 @@ opts = {
 
 solver = nlpsol('solver', 'ipopt', nlp_prob, opts)
 
-print(solver)
 # compute constraints
 # for k = 1:N+1   % box constraints due to the map margins
 #     g = [g ; X(1,k)];   %state x

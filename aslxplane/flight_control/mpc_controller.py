@@ -25,6 +25,8 @@ from .lqr_utils import design_LQR_controller
 from .utils import RobustXPlaneConnect, deg2rad, rad2deg, FlightState, reset_flight
 from .utils import FlightStateWithVision
 from .utils import LATLON_DEG_TO_METERS
+from .mpc_utils import Return_Params, Return_State_MX, Return_Controls_MX, Return_State_Transition_Function
+from .mpc_utils import Return_Objective, Return_Optimization_Setup
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "False"
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
@@ -141,7 +143,8 @@ class MPCFlightController:
         self.it = 0
         self.u_hist, self.x_hist, self.t_hist = [], [], []
         self.t_start = time.time()
-
+        self.u0 = None
+        self.solver = None
         # T = 100.0
         # T = 110.0 / self.config["sim_speed"]
         dt_small = 1.0 / 50.0
@@ -223,22 +226,20 @@ class MPCFlightController:
         state = np.concatenate([np.array(state), self.int_state])
         return state
     
-    def shift(T, t0, x0, u, f):
+    def shift(u):
         """
         Shifts the control input to warm start the solver.
 
         Args:
+            T: Timestep
             f: CasADi symbolic function.
+            x0: Old Initial State
+            u: Array of Control Inputs
+            t0: new starting point.
 
         """
-        st = x0
-        con = u[:,0]
-        f_value = f(st, con)
-        st = st + T * f_value
-        x0 = np.array(st).reshape(-1)
-        t0 = t0 + T
         u0 = np.concatenate([u[1:], u[-1:]])
-        return t0, x0, u0
+        return  u0
 
 
     ################################################################################
@@ -260,7 +261,7 @@ class MPCFlightController:
 
     ################################################################################
     #TODO
-    def _construct_mpc_problem(self, x0):
+    def _construct_lqr_problem(self, x0):
         # read in the target #######################################################################
         x_ref = np.copy(x0)
         target = self.target[:2] + 400 * np.array(  # 400 meters down the runway from starting point
@@ -277,8 +278,7 @@ class MPCFlightController:
                 + [1e3, 1e0]
                 + [1e0, cc["roll_cost"], cc["heading_cost"]]
                 + [1e-3, 1e-3, 1e-3]
-                + [0 * 1e-3, 0 * 1e-3, 0 * 1e-3]
-                + [0 * 1e-3, 0 * 1e-3, 0 * 1e-3]
+
             )
             / 1e3
         )
@@ -351,6 +351,79 @@ class MPCFlightController:
 
         return Q, R, x_ref, u_ref
 
+        
+    def _construct_mpc_problem(self, x0):
+        #Setup 
+        self.Model_Params= Return_Params()
+        self.states, self.states_est, self.n_states = Return_State_MX()
+        self.controls, self.n_controls = Return_Controls_MX()
+        self.f = Return_State_Transition_Function(self.states,self.states_est,self.controls,self.Model_Params)
+
+
+        Np = 100
+        Nc = 50 
+
+        self.U = MX.sym('U',n_controls,Nc) # Decision variables (controls)
+        self.X = MX.sym('X',n_states,(Np+1))
+
+        # Parameters during sim
+        self.P = MX.sym('P',n_states + n_states)
+
+        # Single Shooting in Time
+        X = []
+        X.append(P[0:n_states])
+        st = P[0:n_states]
+
+        for k in range(Np):
+            con = U[:,min(Nc-1,k)]
+            f_value  = f(st,con)
+            st =  st + (dt*f_value)
+            X.append(st)
+
+        self.X = horzcat(*X)
+        self.ff=Function('ff',[U,P],[X])
+        # Using LQR Weights
+
+        x_ref = np.copy(x0)
+        target = self.target[:2] + 400 * np.array(  # 400 meters down the runway from starting point
+            [math.cos(self.approach_ang), math.sin(self.approach_ang)]
+        )
+
+        dist = np.linalg.norm(target[:2] - x0[:2])
+        
+        ##
+        TODO: Construct Costs
+        cc = self.cost_config
+        q_diag = (
+            np.array(
+                [cc["position_cost"], cc["position_cost"], cc["altitude_cost"]]
+                + [1e3, 1e0]
+                + [1e0, cc["roll_cost"], cc["heading_cost"]]
+                + [1e-3, 1e-3, 1e-3]
+            )
+            / 1e3
+        )
+
+        Q = np.diag(q_diag)
+
+        R = np.diag(np.array([1e0, 3e-1, 1e2, 1e0])) * 1e-1
+        u_ref = np.array([0.0, 0.0, 0.0, 0.0])
+        norm = np.linalg.norm(Q[:, :]) + np.linalg.norm(R[:, :])
+        Q, R = Q / norm, R / norm
+
+        ##
+
+        x_target = np.array([target[0],target[1]]+[0,0,0,0,0,0,0,0,0])
+
+        self.obj = Return_Objective(Q,R,Np,Nc,self.X,self.U,self.P)
+        
+        self.solver = Return_Optimization_Setup(self.obj,self.U,self.P,Nc,self.n_controls)
+
+
+        return self.solver, x_target
+
+
+
     ################################################################################
 
     def apply_control(self):
@@ -358,6 +431,7 @@ class MPCFlightController:
 
         state = self.get_curr_state()
         vis_state = self.get_curr_state(vision=True)
+        
 
         if self.controller == "pid":
             pitch, roll, heading = state[5:8]
@@ -376,12 +450,24 @@ class MPCFlightController:
             u = L @ state + l
         elif self.controller == "mpc":
             #TODO
-            Q, R, x_ref, u_ref = self._construct_lqr_problem(state)
-            u0 = np.zeros(R.shape[-1])
-            f, fx, fu = self.f_fx_fu_fn(state, u0)
-            A, B, d = fx, fu, f - fx @ state - fu @ u0
-            L, l = design_LQR_controller(A, B, d, Q, R, x_ref, u_ref, T=10)
-            u = L @ state + l
+            if(self.it==0 or self.u0==None or self.solver==None): 
+                self.solver, self.x_target = self._construct_mpc_problem(state)
+                x0 = state # initial condition
+                self.xs = x_target  # reference posture
+                self.u0 = np.zeros((n_controls*Nc,))  # control inputs
+                args = {'p': vertcat(x0, xs), 'x0': u0.reshape(-1, 1)}
+                sol = solver(**args)
+                u = np.array(sol['x']).reshape(n_controls,Nc)
+                self.u0 = shift(u)
+            else:
+                x0 = state # initial condition
+                self.xs = self.x_target  # reference posture
+                self.u0 = np.zeros((n_controls*Nc,))  # control inputs
+                args = {'p': vertcat(x0, xs), 'x0': u0.reshape(-1, 1)}
+                sol = solver(**args)
+                u = np.array(sol['x']).reshape(n_controls,Nc)
+                self.u0 = shift(u)
+
         u_pitch, u_roll, u_heading, throttle = np.clip(u, [-1, -1, -1, 0], [1, 1, 1, 1])
 
         # landing stage, a poor man's finite state machine #########################################
