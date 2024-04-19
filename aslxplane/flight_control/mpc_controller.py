@@ -226,7 +226,7 @@ class MPCFlightController:
         state = np.concatenate([np.array(state), self.int_state])
         return state
     
-    def shift(u):
+    def shift(self,u):
         """
         Shifts the control input to warm start the solver.
 
@@ -259,98 +259,6 @@ class MPCFlightController:
         int_state = np.concatenate([np.array(pos_int), np.array(ang_int)])
         self.int_state = 0.99**dt * int_state
 
-    ################################################################################
-    #TODO
-    def _construct_lqr_problem(self, x0):
-        # read in the target #######################################################################
-        x_ref = np.copy(x0)
-        target = self.target[:2] + 400 * np.array(  # 400 meters down the runway from starting point
-            [math.cos(self.approach_ang), math.sin(self.approach_ang)]
-        )
-        dist = np.linalg.norm(target[:2] - x0[:2])
-        # read in the target ######################################################################
-
-        # create the cost weighting for state ######################################################
-        cc = self.cost_config
-        q_diag = (
-            np.array(
-                [cc["position_cost"], cc["position_cost"], cc["altitude_cost"]]
-                + [1e3, 1e0]
-                + [1e0, cc["roll_cost"], cc["heading_cost"]]
-                + [1e-3, 1e-3, 1e-3]
-
-            )
-            / 1e3
-        )
-        Q = np.diag(q_diag)
-        # create the cost weighting for state ######################################################
-
-        # create the state reference ###############################################################
-        v_norm = np.array([math.cos(self.approach_ang), math.sin(self.approach_ang)])
-        dx = np.array(target[:2]) - np.array(x0[:2])
-        v_par = np.sum(dx * v_norm) * v_norm
-        v_perp = dx - v_par
-        d_par = math.sqrt(max(5e2**2 - np.linalg.norm(v_perp) ** 2, 0)) / np.linalg.norm(v_par)
-        x_ref[:2] = (
-            x0[:2]
-            + max(np.linalg.norm(v_perp), 1e2) * v_perp / np.linalg.norm(v_perp)
-            + d_par * v_par
-        )
-        x_ref[2] = min(
-            max(self.posi0[2], self.params["pos_ref"][2] * (dist / 5e3)), 300.0
-        )  # altitude
-        x_ref[3:5] = self.v_ref, 0.0  # velocities
-        x_ref[5:8] = self.params["ang_ref"]
-        x_ref[8:11] = 0  # dangles
-        x_ref[11:] = 0  # integrated errors
-        # create the state reference ###############################################################
-
-        # augment the cost using automatic differentiation of an Huber-loss-like objective function
-        if "cost_approx" not in self.data:
-
-            def cost_fn(x0, target, v_norm):
-                """Compute a position cost as a scalar."""
-                dx = target[:2] - x0[:2]
-                v_par = jaxm.sum(dx * v_norm) * v_norm
-                v_perp = dx - v_par
-                v_perp_norm = jaxm.linalg.norm(v_perp)
-                v_perp_norm2 = jaxm.sum(v_perp**2)
-                v_par_norm = jaxm.linalg.norm(v_par)
-                cc = self.cost_config
-                Jv_perp = jaxm.where(
-                    v_perp_norm > 1e3, v_perp_norm, cc["perp_quad_cost"] * v_perp_norm2
-                )
-                Jv_par = v_par_norm
-                return cc["perp_cost"] * Jv_perp + cc["par_cost"] * Jv_par
-
-            @jaxm.jit
-            def cost_approx(x0, target, v_norm):
-                """Develop a quadratic approximation of the cost function based on a scalar cost."""
-                g = jaxm.grad(cost_fn, argnums=0)(x0, target, v_norm)
-                H = jaxm.hessian(cost_fn, argnums=0)(x0, target, v_norm)
-                Q = H + 1e-3 * jaxm.eye(H.shape[-1])
-                ref = x0 - jaxm.linalg.solve(Q, g)
-                return Q, ref
-
-            self.data["cost_fn"] = cost_fn
-            self.data["cost_approx"] = cost_approx
-        Qx, refx = self.data["cost_approx"](x0[:2], np.array(target)[:2], np.array(v_norm))
-        x_ref[:2] = refx[:2]
-        Q[:2, :2] = Qx[:2, :2] / 1e3
-        # augment the cost using automatic differentiation of an Huber-loss-like objective function
-
-        # create the control weight and reference ##################################################
-        R = np.diag(np.array([1e0, 3e-1, 1e2, 1e0])) * 1e-1
-        u_ref = np.array([0.0, 0.0, 0.0, 0.0])
-        # create the control weight and reference ##################################################
-
-        # normalize the cost for numerical stability #######################
-        norm = np.linalg.norm(Q[:, :]) + np.linalg.norm(R[:, :])
-        Q, R = Q / norm, R / norm
-        # normalize the cost for numerical stability #######################
-
-        return Q, R, x_ref, u_ref
-
         
     def _construct_mpc_problem(self, x0):
         #Setup 
@@ -360,28 +268,28 @@ class MPCFlightController:
         self.f = Return_State_Transition_Function(self.states,self.states_est,self.controls,self.Model_Params)
 
 
-        Np = 100
-        Nc = 50 
+        self.Np = 20
+        self.Nc = 10 
 
-        self.U = MX.sym('U',n_controls,Nc) # Decision variables (controls)
-        self.X = MX.sym('X',n_states,(Np+1))
+        self.U = MX.sym('U',self.n_controls,self.Nc) # Decision variables (controls)
+        self.X = MX.sym('X',self.n_states,(self.Np+1))
 
         # Parameters during sim
-        self.P = MX.sym('P',n_states + n_states)
+        self.P = MX.sym('P',self.n_states + self.n_states)
 
         # Single Shooting in Time
         X = []
-        X.append(P[0:n_states])
-        st = P[0:n_states]
-
-        for k in range(Np):
-            con = U[:,min(Nc-1,k)]
-            f_value  = f(st,con)
+        X.append(self.P[0:self.n_states])
+        st = self.P[0:self.n_states]
+        dt = self.Model_Params["dt"]
+        for k in range(self.Np):
+            con = self.U[:,min(self.Nc-1,k)]
+            f_value  = self.f(st,con)
             st =  st + (dt*f_value)
             X.append(st)
 
         self.X = horzcat(*X)
-        self.ff=Function('ff',[U,P],[X])
+        self.ff=Function('ff',[self.U,self.P],[self.X])
         # Using LQR Weights
 
         x_ref = np.copy(x0)
@@ -392,7 +300,6 @@ class MPCFlightController:
         dist = np.linalg.norm(target[:2] - x0[:2])
         
         ##
-        TODO: Construct Costs
         cc = self.cost_config
         q_diag = (
             np.array(
@@ -415,9 +322,9 @@ class MPCFlightController:
 
         x_target = np.array([target[0],target[1]]+[0,0,0,0,0,0,0,0,0])
 
-        self.obj = Return_Objective(Q,R,Np,Nc,self.X,self.U,self.P)
+        self.obj = Return_Objective(Q,R,self.Np,self.Nc,self.X,self.U,self.P,self.n_states)
         
-        self.solver = Return_Optimization_Setup(self.obj,self.U,self.P,Nc,self.n_controls)
+        self.solver = Return_Optimization_Setup(self.obj,self.U,self.P,self.Nc,self.n_controls)
 
 
         return self.solver, x_target
@@ -450,23 +357,26 @@ class MPCFlightController:
             u = L @ state + l
         elif self.controller == "mpc":
             #TODO
-            if(self.it==0 or self.u0==None or self.solver==None): 
+            print("Iteration Numer : ", self.it)
+            if(self.it==0): 
                 self.solver, self.x_target = self._construct_mpc_problem(state)
-                x0 = state # initial condition
-                self.xs = x_target  # reference posture
-                self.u0 = np.zeros((n_controls*Nc,))  # control inputs
-                args = {'p': vertcat(x0, xs), 'x0': u0.reshape(-1, 1)}
-                sol = solver(**args)
-                u = np.array(sol['x']).reshape(n_controls,Nc)
-                self.u0 = shift(u)
-            else:
-                x0 = state # initial condition
+                x0 = state[0:11] # initial condition
                 self.xs = self.x_target  # reference posture
-                self.u0 = np.zeros((n_controls*Nc,))  # control inputs
-                args = {'p': vertcat(x0, xs), 'x0': u0.reshape(-1, 1)}
-                sol = solver(**args)
-                u = np.array(sol['x']).reshape(n_controls,Nc)
-                self.u0 = shift(u)
+                self.u0 = np.zeros((self.n_controls*self.Nc,))  # control inputs
+                args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1)}
+                sol = self.solver(**args)
+                u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
+                self.u0 = self.shift(u1)
+            else:
+                x0 = state[0:11] # initial condition
+                self.xs = self.x_target  # reference posture
+                self.u0 = np.zeros((self.n_controls*self.Nc,))  # control inputs
+                args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1)}
+                sol = self.solver(**args)
+                u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
+                self.u0 = self.shift(u1)
+
+            u = u1[:,0]
 
         u_pitch, u_roll, u_heading, throttle = np.clip(u, [-1, -1, -1, 0], [1, 1, 1, 1])
 

@@ -1,12 +1,16 @@
 from casadi import *
 import numpy as np
 import json
+from pathlib import Path
 
 import sys, os
 
 
 def Return_Params():
-    f = open('../data/dynamics_linear.json')
+
+    dynamics_path = Path(__file__).absolute().parents[1] / "data" / "dynamics_linear.json"
+
+    f = open(dynamics_path)
  
     # returns JSON object as 
     # a dictionary
@@ -57,7 +61,7 @@ def Return_Controls_MX():
 
     return controls, n_controls
 
-def Return_State_Transition_Function(states,states_est,controlsModel_Params):
+def Return_State_Transition_Function(states,states_est,controls,Model_Params):
     
     v = states[4]
     th = states[6]
@@ -74,7 +78,7 @@ def Return_State_Transition_Function(states,states_est,controlsModel_Params):
 
     return f
 
-def Return_Objective(Q,R,Np,Nc,X,U,P):
+def Return_Objective(Q,R,Np,Nc,X,U,P,n_states):
 
     obj = 0
     Q = DM(Q)
