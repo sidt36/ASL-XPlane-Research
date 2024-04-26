@@ -10,7 +10,7 @@ from copy import copy, deepcopy
 from pathlib import Path
 from typing import Any, Optional
 from multiprocessing import Lock
-
+import matplotlib.pyplot as plt
 import sys, os
 from casadi import *
 
@@ -68,6 +68,7 @@ class MPCFlightController:
         cost_config: dict[str, float] = DEFAULT_COST_CONFIG,
         view: Optional[xpc.ViewType] = None,
         angle_correction: float = ANGLE_CORRECTION,
+        open_loop = False
     ):
         """LQR Flight Controller - mostly tested for landing or heading line navigation.
 
@@ -81,7 +82,7 @@ class MPCFlightController:
                                                 flight reset position. Defaults
                                                 to ANGLE_CORRECTION.
         """
-
+        self.open_loop = open_loop
         self.config, self.cost_config = deepcopy(DEFAULT_CONFIG), deepcopy(DEFAULT_COST_CONFIG)
         self.config.update(deepcopy(config))
         self.cost_config.update(deepcopy(cost_config))
@@ -157,9 +158,16 @@ class MPCFlightController:
             self.it += 1
             is_crashed = self.xp.getDREF("sim/flightmodel2/misc/has_crashed")[0] > 0.0
             if is_crashed:
+                # plt.plot(self.t_hist,self.x_hist)
+                # plt.savefig(str(time.time())+ ".png") 
+                # plt.show()
+
                 reset_flight(self.xp)
                 return True
         if self.done:
+            # plt.plot(self.t_hist,self.x_hist)
+            # plt.savefig(str(time.time())+ ".png") 
+            # plt.show()
             self.reset()
         return False
 
@@ -267,7 +275,6 @@ class MPCFlightController:
         self.controls, self.n_controls = Return_Controls_MX()
         self.f = Return_State_Transition_Function(self.states,self.states_est,self.controls,self.Model_Params)
 
-
         self.Np = 20
         self.Nc = 10 
 
@@ -276,7 +283,7 @@ class MPCFlightController:
 
         # Parameters during sim
         self.P = MX.sym('P',self.n_states + self.n_states)
-
+        v_norm = np.array([math.cos(self.approach_ang), math.sin(self.approach_ang)])
         # Single Shooting in Time
         X = []
         X.append(self.P[0:self.n_states])
@@ -293,11 +300,7 @@ class MPCFlightController:
         # Using LQR Weights
 
         x_ref = np.copy(x0)
-        target = self.target[:2] + 400 * np.array(  # 400 meters down the runway from starting point
-            [math.cos(self.approach_ang), math.sin(self.approach_ang)]
-        )
-
-        dist = np.linalg.norm(target[:2] - x0[:2])
+        
         
         ##
         cc = self.cost_config
@@ -320,18 +323,42 @@ class MPCFlightController:
 
         ##
 
-        x_target = np.array([target[0],target[1]]+[0,0,0,0,0,0,0,0,0])
 
-        self.obj = Return_Objective(Q,R,self.Np,self.Nc,self.X,self.U,self.P,self.n_states)
+        self.obj = Return_Objective(Q,R,self.Np,self.Nc,self.X,self.U,self.P,self.n_states,v_norm,cc)
         
         self.solver = Return_Optimization_Setup(self.obj,self.U,self.P,self.Nc,self.n_controls)
 
 
-        return self.solver, x_target
+        return self.solver
 
 
 
     ################################################################################
+    def compute_target_state(self,x0):
+        target = self.target[:2] + 400 * np.array(  # 400 meters down the runway from starting point
+            [math.cos(self.approach_ang), math.sin(self.approach_ang)]
+        )
+        x_ref = np.zeros((self.n_states,))
+        v_norm = np.array([math.cos(self.approach_ang), math.sin(self.approach_ang)])
+        dx = np.array(target[:2]) - np.array(x0[:2])
+        v_par = np.sum(dx * v_norm) * v_norm
+        v_perp = dx - v_par
+        d_par = math.sqrt(max(5e2**2 - np.linalg.norm(v_perp) ** 2, 0)) / np.linalg.norm(v_par)
+        x_ref[:2] = (
+            x0[:2]
+            + max(np.linalg.norm(v_perp), 1e2) * v_perp / np.linalg.norm(v_perp)
+            + d_par * v_par
+        )
+        dist = np.linalg.norm(target[:2] - x0[:2])
+        x_ref[2] = min(
+            max(self.posi0[2], self.params["pos_ref"][2] * (dist / 5e3)), 300.0
+        )  # altitude
+        x_ref[3:5] = self.v_ref, 0.0  # velocities
+        x_ref[5:8] = self.params["ang_ref"]
+
+        return x_ref
+    
+
 
     def apply_control(self):
         """Compute and apply the control action."""
@@ -357,25 +384,32 @@ class MPCFlightController:
             u = L @ state + l
         elif self.controller == "mpc":
             #TODO
-            print("Iteration Numer : ", self.it)
+            print("Iteration Number : ", self.it)
             if(self.it==0): 
-                self.solver, self.x_target = self._construct_mpc_problem(state)
+                self.solver = self._construct_mpc_problem(state)
                 x0 = state[0:11] # initial condition
-                self.xs = self.x_target  # reference posture
+
+                self.xs = self.compute_target_state(x0)  # reference posture
                 self.u0 = np.zeros((self.n_controls*self.Nc,))  # control inputs
                 args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1)}
                 sol = self.solver(**args)
                 u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
+                self.x0 = x0 + self.f(x0,u1[:,0])
+
                 self.u0 = self.shift(u1)
             else:
                 x0 = state[0:11] # initial condition
-                self.xs = self.x_target  # reference posture
+                if(self.open_loop):
+                    x0 = self.x0
+                
+                self.xs = self.compute_target_state(x0)  # reference posture
                 self.u0 = np.zeros((self.n_controls*self.Nc,))  # control inputs
                 args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1)}
                 sol = self.solver(**args)
                 u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
-                self.u0 = self.shift(u1)
+                self.x0 = x0 + self.f(x0,u1[:,0])
 
+                self.u0 = self.shift(u1)
             u = u1[:,0]
 
         u_pitch, u_roll, u_heading, throttle = np.clip(u, [-1, -1, -1, 0], [1, 1, 1, 1])
@@ -394,6 +428,7 @@ class MPCFlightController:
         ctrl = self._build_control(pitch=u_pitch, roll=u_roll, yaw=u_heading, throttle=throttle)
         self.xp.sendCTRL(ctrl)
 
+   
     def close(self):
         self.flight_state.close()
         self.done = True

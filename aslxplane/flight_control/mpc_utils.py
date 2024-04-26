@@ -61,34 +61,72 @@ def Return_Controls_MX():
 
     return controls, n_controls
 
+# From Robert's LQR Code
+# def cost_fn(x0, target, v_norm):
+#     """Compute a position cost as a scalar."""
+#     dx = target[:2] - x0[:2]
+#     v_par = jaxm.sum(dx * v_norm) * v_norm
+#     v_perp = dx - v_par
+#     v_perp_norm = jaxm.linalg.norm(v_perp)
+#     v_perp_norm2 = jaxm.sum(v_perp**2)
+#     v_par_norm = jaxm.linalg.norm(v_par)
+#     cc = self.cost_config
+#     Jv_perp = jaxm.where(
+#         v_perp_norm > 1e3, v_perp_norm, cc["perp_quad_cost"] * v_perp_norm2
+#     )
+#     Jv_par = v_par_norm
+#     return cc["perp_cost"] * Jv_perp + cc["par_cost"] * Jv_par
+
 def Return_State_Transition_Function(states,states_est,controls,Model_Params):
     
     v = states[4]
     th = states[6]
     
-
     Wx = DM(Model_Params["Wx"])
     Wu = DM(Model_Params["Wu"])
     b = DM(Model_Params["b"])
     hc = DM(Model_Params["hc"])
 
-    rhs = vertcat(v*np.cos(th + 0*hc),v*np.sin(th + 0*hc), Wx@states_est + Wu@controls + b)
+    rhs = vertcat(v*cos(th + 0*hc),v*sin(th + 0*hc), Wx@states_est + Wu@controls + b)
 
     f = Function('f',[states,controls],[rhs])
 
     return f
 
-def Return_Objective(Q,R,Np,Nc,X,U,P,n_states):
+def Return_Objective(Q,R,Np,Nc,X,U,P,n_states,v_norm,cc):
 
     obj = 0
     Q = DM(Q)
     R = DM(R)
+
     for k in range(Np):
         st = X[:,k]  - P[n_states:]
         con = U[:,min(Nc-1,k)]
         obj = obj+st.T@Q@st + con.T@R@con # calculate obj
+
+    obj = obj + cost_fn(P[0:n_states],P[n_states:],v_norm,cc)
     
     return obj
+def cost_fn(x0, target, v_norm, cc):
+    """Compute a position cost as a scalar."""
+    dx = target[:2] - x0[:2]
+    v_par = mtimes(mtimes(dx.T, v_norm), v_norm)
+    v_perp = dx - v_par
+    v_perp_norm = norm_2(v_perp)
+    v_perp_norm2 = mtimes(v_perp.T, v_perp)
+    v_par_norm = norm_2(v_par)
+    cc = cc
+    Jv_perp = if_else(v_perp_norm > 1e3, v_perp_norm, cc["perp_quad_cost"] * v_perp_norm2)
+    Jv_par = v_par_norm
+    return cc["perp_cost"] * Jv_perp + cc["par_cost"] * Jv_par
+
+# def cost_approx(x0, target, v_norm):
+#     """Develop a quadratic approximation of the cost function based on a scalar cost."""
+#     g = gradient(cost_fn(x0, target, v_norm), x0)
+#     H = hessian(cost_fn(x0, target, v_norm), x0)[0]
+#     Q = H + 1e-3 * MX.eye(H.size1())
+#     ref = x0 - solve(Q, g)
+#     return Q, ref
 
 def Return_Optimization_Setup(obj,U,P,Nc,n_controls):
     
@@ -107,6 +145,7 @@ def Return_Optimization_Setup(obj,U,P,Nc,n_controls):
     solver = nlpsol('solver', 'ipopt', nlp_prob, opts)    
 
     return solver
+
 
 
 

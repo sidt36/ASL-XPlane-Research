@@ -92,14 +92,13 @@ def run_trial(
         objective=objective, cost_list=json.dumps(cost_list), hist_list=json.dumps(hist_list)
     )
 
-
 ####################################################################################################
 
 
 def main():
-    offsets_to_test = [(0.0, 0.0), (-2e3, 0.0), (2e3, 0.0)]  # meters before the airport
+    offsets_to_test = [(0.0, 0.0), (-300, 0.0), (300, 0.0)]  # meters before the airport
     offsets_to_test = [
-        utils.sample_point_in_triangle(*[(0.0, 0.0), (-2e3, 0.0), (2e3, 0.0)]) for _ in range(300)
+        utils.sample_point_in_triangle(*[(0.0, 0.0), (-300, 0.0), (300, 0.0)]) for _ in range(5)
     ]
     cost_config = {}
     for offset in tqdm(offsets_to_test):
