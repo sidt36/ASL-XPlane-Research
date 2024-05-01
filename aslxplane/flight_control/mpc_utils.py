@@ -96,37 +96,58 @@ def Return_State_Transition_Function(states,states_est,controls,Model_Params):
 def Return_Objective(Q,R,Np,Nc,X,U,P,n_states,v_norm,cc):
 
     obj = 0
-    Q = DM(Q)
+    Q = MX(Q)
     R = DM(R)
+    v_norm = DM(v_norm)
+
+
+    x01 = MX.sym('x0', 2)
+    target1 = MX.sym('target', 2)
+    v_norm1 = MX.sym('v_norm', 2)
+
+    x_ref = MX.sym('x_ref',n_states)
+   
+    def cost_fn(x0, target, v_norm):
+        """Compute a position cost as a scalar."""
+        dx = target[:2] - x0[:2]
+        v_par = mtimes(mtimes(dx.T, v_norm), v_norm)
+        v_perp = dx - v_par
+        v_perp_norm = norm_2(v_perp)
+        v_perp_norm2 = mtimes(v_perp.T, v_perp)
+        v_par_norm = norm_2(v_par)
+        Jv_perp = if_else(v_perp_norm > 1e3, v_perp_norm, cc["perp_quad_cost"] * v_perp_norm2)
+        Jv_par = v_par_norm
+        return cc["perp_cost"] * Jv_perp + cc["par_cost"] * Jv_par
+
+    def cost_approx(x0, target, v_norm):
+        """Develop a quadratic approximation of the cost function based on a scalar cost."""        
+        g = gradient(cost_fn(x0, target, v_norm), x0)
+        H = hessian(cost_fn(x0, target, v_norm), x0)[0]
+        Q = H + 1e-3 * MX.eye(H.size1())
+        ref = x0 - solve(Q, g)
+        return Q, ref
+
+
+    cost_approx_fn = Function('cost_approx_fn', [x01, target1, v_norm1], cost_approx(x01, target1, v_norm1))
+
+    Qx, refx = cost_approx_fn(P[0:2], P[n_states:n_states+2], v_norm)
+
+    # Qx_sub = MX.to_DM(Qx)
+
+
+    Q[:2, :2] = Qx[:2, :2] / 1e3
+    # Q = DM(Qx)
+    x_ref = P[0:n_states]
+    x_ref[:2] = refx[:2]
 
     for k in range(Np):
-        st = X[:,k]  - P[n_states:]
+        st = X[:,k]  -x_ref
         con = U[:,min(Nc-1,k)]
         obj = obj+st.T@Q@st + con.T@R@con # calculate obj
 
-    obj = obj + cost_fn(P[0:n_states],P[n_states:],v_norm,cc)
+    # obj = obj + cost_fn(P[0:n_states],P[n_states:],v_norm)
     
     return obj
-def cost_fn(x0, target, v_norm, cc):
-    """Compute a position cost as a scalar."""
-    dx = target[:2] - x0[:2]
-    v_par = mtimes(mtimes(dx.T, v_norm), v_norm)
-    v_perp = dx - v_par
-    v_perp_norm = norm_2(v_perp)
-    v_perp_norm2 = mtimes(v_perp.T, v_perp)
-    v_par_norm = norm_2(v_par)
-    cc = cc
-    Jv_perp = if_else(v_perp_norm > 1e3, v_perp_norm, cc["perp_quad_cost"] * v_perp_norm2)
-    Jv_par = v_par_norm
-    return cc["perp_cost"] * Jv_perp + cc["par_cost"] * Jv_par
-
-# def cost_approx(x0, target, v_norm):
-#     """Develop a quadratic approximation of the cost function based on a scalar cost."""
-#     g = gradient(cost_fn(x0, target, v_norm), x0)
-#     H = hessian(cost_fn(x0, target, v_norm), x0)[0]
-#     Q = H + 1e-3 * MX.eye(H.size1())
-#     ref = x0 - solve(Q, g)
-#     return Q, ref
 
 def Return_Optimization_Setup(obj,U,P,Nc,n_controls):
     
