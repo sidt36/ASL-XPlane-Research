@@ -372,7 +372,6 @@ class LQRFlightController:
         x_ref[8:11] = 0  # dangles
         x_ref[11:] = 0  # integrated errors
         # create the state reference ###############################################################
-        print(x_ref)
         # augment the cost using automatic differentiation of an Huber-loss-like objective function
         if "cost_approx" not in self.data:
 
