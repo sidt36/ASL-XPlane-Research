@@ -96,15 +96,15 @@ def run_trial(
 
 
 def main():
-    offsets_to_test = [(0.0, 0.0), (-300, 0.0), (300, 0.0)]  # meters before the airport
+    offsets_to_test = [(0.0, 0.0), (-30, 0.0), (30, 0.0)]  # meters before the airport
     offsets_to_test = [
-        utils.sample_point_in_triangle(*[(0.0, 0.0), (-300, 0.0), (300, 0.0)]) for _ in range(5)
+        utils.sample_point_in_triangle(*[(0.0, 0.0), (0.0, 0.0), (0.0, 0.0)]) for _ in range(5)
     ]
     cost_config = {}
     for offset in tqdm(offsets_to_test):
         run_trial(
             cost_config,
-            sim_speed=1.0,
+            sim_speed=1,
             record_video=True,
             display=False,
             view=xpc.ViewType.FullscreenNoHud,
