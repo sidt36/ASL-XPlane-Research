@@ -161,7 +161,7 @@ class MPCFlightController:
                 plt.plot(np.array(self.x_hist)[0,0],np.array(self.x_hist)[0,1],'o')
                 plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
                 plt.plot(np.array(self.x_hist)[-1,0],np.array(self.x_hist)[-1,1],'x')
-                plt.plot(np.array(self.target)[-1,0],np.array(self.x_hist)[-1,1],'*')
+                plt.plot(np.array(self.target)[0],np.array(self.target)[1],'*')
                 plt.xlabel('X')
                 plt.ylabel('Y')
                 plt.title(f'Path of Aircraft, Open Loop = {self.open_loop}')
