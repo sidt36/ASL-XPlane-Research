@@ -26,7 +26,7 @@ dt = (params["dt_sqrt"][0])**2
 hc = params["heading_correction"]
 
 DEFAULT_COST_CONFIG = {
-    "heading_cost": 1e4,
+     "heading_cost": 1e4,
     "roll_cost": 3e4,
     "position_cost": 1e0,
     "altitude_cost": 1e2,
@@ -67,11 +67,13 @@ b = DM(b_loaded)
 controls = vertcat(c1,c2,c3,c4)
 n_controls = MX.size(controls)[0]
 
-rhs = vertcat(v*np.cos(th),v*np.sin(th), Wx@states_est + Wu@controls + b)
+rhs = vertcat(v*cos(th),v*sin(th), Wx@states_est + Wu@controls + b)
 f = Function('f',[states,controls],[rhs]) # nonlinear mapping function f(x,u)
 
-Np = 100
-Nc = 50
+Np = 40
+
+
+Nc = 40  
 
 U = MX.sym('U',n_controls,Nc) # Decision variables (controls)
 X = MX.sym('X',n_states,(Np+1))
@@ -98,12 +100,19 @@ ff=Function('ff',[U,P],[X])
 obj = 0; 
 
 Q = np.zeros((n_states,n_states))
+cc = DEFAULT_COST_CONFIG
+Q = np.diag(
+            np.array(
+                [cc["position_cost"], cc["position_cost"], cc["altitude_cost"]]
+                + [1e3, 1e0]
+                + [1e0, cc["roll_cost"], cc["heading_cost"]]
+                + [1e-1, 1e-2, 1e-3]
+            )
+            / 1e3
+        )
 
-for i in range(n_states):
-    Q[i,i] = 1
 R = np.zeros((n_controls,n_controls))
-R[1,1] = 2 # weighing matrices (controls)
-
+R = np.diag(np.array([1e0, 3e-1, 1e2, 1e0])) * 1e-1
 Q = DM(Q)
 R = DM(R)
 
@@ -134,9 +143,15 @@ solver = nlpsol('solver', 'ipopt', nlp_prob, opts)
 # end
 
 t0 = 0
-x0 = 1000*np.ones((n_states,))  # initial condition
-xs = 1*np.ones((n_states,))  # reference posture
-u0 = np.zeros((n_controls*Nc,))  # control inputs
+x0 = 0*np.ones((n_states,))  # initial condition
+
+x0 = np.array([2.77520233e+01, -5.22740112e+03,  3.05098480e+02 , 5.69239006e+03,0 ,0,0,0,0,0,0])
+
+xs = 1*np.ones((n_states,))  # reference 
+xs = np.array([2.77520233e+01,  300,100,20,
+  0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  0,
+  0.00000000e+00,  0.00000000e+00,  0.00000000e+00])
+u0 = 0.5*np.ones((n_controls*Nc,))  # control inputs
 sim_tim = 40  # maximum simulation time
 xx = np.zeros((11, int(sim_tim / dt) + 1)) # Stores History
 xx[:, 0] = x0

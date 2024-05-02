@@ -26,7 +26,7 @@ from .utils import RobustXPlaneConnect, deg2rad, rad2deg, FlightState, reset_fli
 from .utils import FlightStateWithVision
 from .utils import LATLON_DEG_TO_METERS
 from .mpc_utils import Return_Params, Return_State_MX, Return_Controls_MX, Return_State_Transition_Function
-from .mpc_utils import Return_Objective, Return_Optimization_Setup
+from .mpc_utils import Return_Objective, Return_Optimization_Setup, advanceStateNumpy
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "False"
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
@@ -129,7 +129,7 @@ class MPCFlightController:
 
         self.data = dict()
 
-    def loop(self, how_long: float = math.inf) -> None:
+    def loop(self, how_long: float = 30) -> None:
         """Apply control in a loop.
 
         Args:
@@ -158,16 +158,23 @@ class MPCFlightController:
             self.it += 1
             is_crashed = self.xp.getDREF("sim/flightmodel2/misc/has_crashed")[0] > 0.0
             if is_crashed:
-                # plt.plot(self.t_hist,self.x_hist)
-                # plt.savefig(str(time.time())+ ".png") 
-                # plt.show()
+                plt.plot(np.array(self.x_hist)[0,0],np.array(self.x_hist)[0,1],'o')
+                plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
+                plt.plot(np.array(self.x_hist)[-1,0],np.array(self.x_hist)[-1,1],'x')
+                plt.plot(np.array(self.target)[-1,0],np.array(self.x_hist)[-1,1],'*')
+                plt.xlabel('X')
+                plt.ylabel('Y')
+                plt.title(f'Path of Aircraft, Open Loop = {self.open_loop}')
+                plt.savefig(str(time.time())+ ".png") 
+                plt.show()
 
                 reset_flight(self.xp)
                 return True
+        # plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
         if self.done:
-            # plt.plot(self.t_hist,self.x_hist)
-            # plt.savefig(str(time.time())+ ".png") 
-            # plt.show()
+            plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
+            plt.savefig(str(time.time())+ ".png") 
+            plt.show()
             self.reset()
         return False
 
@@ -221,6 +228,7 @@ class MPCFlightController:
     def get_time_state(self):
         if self.use_vision:
             return tuple(self.vis_flight_state.last_sim_time_and_state)
+
         return tuple(self.flight_state.last_sim_time_and_state)
 
     def get_curr_time(self):
@@ -276,7 +284,7 @@ class MPCFlightController:
         self.f = Return_State_Transition_Function(self.states,self.states_est,self.controls,self.Model_Params)
 
         self.Np = 20
-        self.Nc = 10 
+        self.Nc = 20 
 
         self.U = MX.sym('U',self.n_controls,self.Nc) # Decision variables (controls)
         self.X = MX.sym('X',self.n_states,(self.Np+1))
@@ -388,14 +396,12 @@ class MPCFlightController:
             if(self.it==0): 
                 self.solver = self._construct_mpc_problem(state)
                 x0 = state[0:11] # initial condition
-
                 self.xs = self.compute_target_state(x0)  # reference posture
                 self.u0 = np.zeros((self.n_controls*self.Nc,))  # control inputs
                 args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1)}
                 sol = self.solver(**args)
                 u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
-                self.x0 = x0 + self.f(x0,u1[:,0])
-
+                self.x0 = advanceStateNumpy(x0,u1[:,0])
                 self.u0 = self.shift(u1)
             else:
                 x0 = state[0:11] # initial condition
@@ -407,8 +413,8 @@ class MPCFlightController:
                 args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1)}
                 sol = self.solver(**args)
                 u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
-                self.x0 = x0 + self.f(x0,u1[:,0])
-
+                self.x0 = advanceStateNumpy(x0,u1[:,0])
+                print(f"Error is : {np.linalg.norm(self.x0 -  self.xs)}")
                 self.u0 = self.shift(u1)
             u = u1[:,0]
 

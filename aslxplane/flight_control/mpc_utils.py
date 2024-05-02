@@ -139,7 +139,6 @@ def Return_Objective(Q,R,Np,Nc,X,U,P,n_states,v_norm,cc):
     # Q = DM(Qx)
     x_ref = P[0:n_states]
     x_ref[:2] = refx[:2]
-
     for k in range(Np):
         st = X[:,k]  -x_ref
         con = U[:,min(Nc-1,k)]
@@ -167,7 +166,16 @@ def Return_Optimization_Setup(obj,U,P,Nc,n_controls):
 
     return solver
 
-
+def advanceStateNumpy(x0,u):
+    Model_Params = Return_Params()
+    v = x0[4]
+    th = x0[6]
+    f = np.zeros(x0.shape)
+    f[0] = v*np.cos(th)
+    f[1] = v*np.sin(th)
+    f[2:] = Model_Params['Wx']@x0[4:] + Model_Params['Wu']@u + Model_Params['b']
+    x_new = x0 + Model_Params["dt"]*f
+    return x_new
 
 
 

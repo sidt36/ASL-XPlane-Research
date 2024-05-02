@@ -41,7 +41,7 @@ def run_trial(
     sim_speed: float = 1.0,
     record_video: bool = False,
     view: xpc.ViewType = None,
-    abort_at: float = 100,  # seconds
+    abort_at: float = 200,  # seconds
     offsets_to_test: list[tuple[int]] = [(0, 0)],
     display: bool = False,
     data_prefix: str | Path = ".",
@@ -49,7 +49,7 @@ def run_trial(
 ):
     trial_id = random.randint(0, int(1e6) - 1)
     reset_flight(RobustXPlaneConnect(), on_crash_only=False)
-    controller = MPCFlightController(config={"sim_speed": sim_speed}, view=view)
+    controller = MPCFlightController(config={"sim_speed": sim_speed}, view=view,open_loop=True)
     hist_list, cost_list = [], []
     recorder = None
     for offset in tqdm(offsets_to_test):
