@@ -49,7 +49,7 @@ def run_trial(
 ):
     trial_id = random.randint(0, int(1e6) - 1)
     reset_flight(RobustXPlaneConnect(), on_crash_only=False)
-    controller = MPCFlightController(config={"sim_speed": sim_speed}, view=view,open_loop=True)
+    controller = MPCFlightController(config={"sim_speed": sim_speed}, view=view,open_loop=False)
     hist_list, cost_list = [], []
     recorder = None
     for offset in tqdm(offsets_to_test):

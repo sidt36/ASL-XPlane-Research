@@ -47,10 +47,10 @@ DEFAULT_CONFIG = {
 
 # magic numbers for Cessna Skyhawk
 DEFAULT_COST_CONFIG = {
-    "heading_cost": 1e4,
+    "heading_cost": 1e5,
     "roll_cost": 3e4,
-    "position_cost": 1e0,
-    "altitude_cost": 1e2,
+    "position_cost": 1e0*8,
+    "altitude_cost": 1.1e3,
     "par_cost": 498.863996,
     "perp_cost": 481.605499,
     "perp_quad_cost": 0.002698,
@@ -128,7 +128,16 @@ class MPCFlightController:
         self.reset()
 
         self.data = dict()
-
+    def plot_paths(self):
+        plt.plot(np.array(self.x_hist)[0,0],np.array(self.x_hist)[0,1],'o')
+        plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
+        plt.plot(np.array(self.x_hist)[-1,0],np.array(self.x_hist)[-1,1],'x')
+        plt.plot(np.array(self.target)[0],np.array(self.target)[1],'*')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.title(f'Path of Aircraft, Open Loop = {self.open_loop}')
+        plt.savefig(str(time.time())+ ".png") 
+        plt.show()
     def loop(self, how_long: float = 30) -> None:
         """Apply control in a loop.
 
@@ -158,23 +167,12 @@ class MPCFlightController:
             self.it += 1
             is_crashed = self.xp.getDREF("sim/flightmodel2/misc/has_crashed")[0] > 0.0
             if is_crashed:
-                plt.plot(np.array(self.x_hist)[0,0],np.array(self.x_hist)[0,1],'o')
-                plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
-                plt.plot(np.array(self.x_hist)[-1,0],np.array(self.x_hist)[-1,1],'x')
-                plt.plot(np.array(self.target)[0],np.array(self.target)[1],'*')
-                plt.xlabel('X')
-                plt.ylabel('Y')
-                plt.title(f'Path of Aircraft, Open Loop = {self.open_loop}')
-                plt.savefig(str(time.time())+ ".png") 
-                plt.show()
-
+                self.plot_paths()
                 reset_flight(self.xp)
                 return True
-        # plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
+        self.plot_paths()
         if self.done:
-            plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
-            plt.savefig(str(time.time())+ ".png") 
-            plt.show()
+            self.plot_paths()
             self.reset()
         return False
 
@@ -324,10 +322,10 @@ class MPCFlightController:
 
         Q = np.diag(q_diag)
 
-        R = np.diag(np.array([1e0, 3e-1, 1e2, 1e0])) * 1e-1
+
+
+        R = np.diag(np.array([10e1, 3e0, 1e2, 1e0])) * 5e3
         u_ref = np.array([0.0, 0.0, 0.0, 0.0])
-        norm = np.linalg.norm(Q[:, :]) + np.linalg.norm(R[:, :])
-        Q, R = Q / norm, R / norm
 
         ##
 
@@ -394,11 +392,11 @@ class MPCFlightController:
             #TODO
             print("Iteration Number : ", self.it)
             if(self.it==0): 
-                self.solver = self._construct_mpc_problem(state)
+                self.solver, self.lbx, self.ubx = self._construct_mpc_problem(state)
                 x0 = state[0:11] # initial condition
                 self.xs = self.compute_target_state(x0)  # reference posture
                 self.u0 = np.zeros((self.n_controls*self.Nc,))  # control inputs
-                args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1)}
+                args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1), 'lbx': self.lbx, 'ubx': self.ubx}
                 sol = self.solver(**args)
                 u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
                 self.x0 = advanceStateNumpy(x0,u1[:,0])
@@ -407,17 +405,16 @@ class MPCFlightController:
                 x0 = state[0:11] # initial condition
                 if(self.open_loop):
                     x0 = self.x0
-                
                 self.xs = self.compute_target_state(x0)  # reference posture
                 self.u0 = np.zeros((self.n_controls*self.Nc,))  # control inputs
-                args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1)}
+                args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1), 'lbx': self.lbx, 'ubx': self.ubx}
                 sol = self.solver(**args)
                 u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
                 self.x0 = advanceStateNumpy(x0,u1[:,0])
                 print(f"Error is : {np.linalg.norm(self.x0 -  self.xs)}")
                 self.u0 = self.shift(u1)
             u = u1[:,0]
-
+        print(u)
         u_pitch, u_roll, u_heading, throttle = np.clip(u, [-1, -1, -1, 0], [1, 1, 1, 1])
 
         # landing stage, a poor man's finite state machine #########################################

@@ -152,6 +152,9 @@ def Return_Optimization_Setup(obj,U,P,Nc,n_controls):
     
     OPT_variables = vertcat(U).reshape((Nc*n_controls, 1))
 
+    lbx = [-1]*(Nc*n_controls)
+    ubx = [1]*(Nc*n_controls)
+
     nlp_prob = {'f': obj, 'x': OPT_variables, 'p': P}
 
     opts = {
@@ -164,7 +167,7 @@ def Return_Optimization_Setup(obj,U,P,Nc,n_controls):
 
     solver = nlpsol('solver', 'ipopt', nlp_prob, opts)    
 
-    return solver
+    return solver, lbx, ubx
 
 def advanceStateNumpy(x0,u):
     Model_Params = Return_Params()
