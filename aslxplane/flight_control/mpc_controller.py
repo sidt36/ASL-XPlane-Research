@@ -55,8 +55,12 @@ DEFAULT_COST_CONFIG = {
     "perp_cost": 481.605499,
     "perp_quad_cost": 0.002698,
     "par_quad_cost": 1e-3,
-}
+    "r_1":10e1*5e3,
+    "r_2":3e0*5e3,
+    "r_3":1e2*5e3,
+    "r_4":2e-1*5e3
 
+}
 # weird angle misalignment vs runway, perhaps due to in-game magnetic compass distortion
 ANGLE_CORRECTION = -0.1
 
@@ -126,6 +130,7 @@ class MPCFlightController:
         self.ts, self.X, self.U, self.Ls = None, None, None, None
         self.done = False
         self.reset()
+        time.sleep(2.0)
 
         self.data = dict()
     def plot_paths(self):
@@ -137,7 +142,6 @@ class MPCFlightController:
         plt.ylabel('Y')
         plt.title(f'Path of Aircraft, Open Loop = {self.open_loop}')
         plt.savefig(str(time.time())+ ".png") 
-        plt.show()
     def loop(self, how_long: float = 30) -> None:
         """Apply control in a loop.
 
@@ -148,6 +152,7 @@ class MPCFlightController:
 
         t_loop_start = time.time()
         self.reset()
+        time.sleep(1)
 
         self.data = dict()
         self.it = 0
@@ -167,13 +172,14 @@ class MPCFlightController:
             self.it += 1
             is_crashed = self.xp.getDREF("sim/flightmodel2/misc/has_crashed")[0] > 0.0
             if is_crashed:
-                self.plot_paths()
+                # self.plot_paths()
                 reset_flight(self.xp)
+                time.sleep(2.0)
                 return True
-        self.plot_paths()
         if self.done:
-            self.plot_paths()
+            # self.plot_paths()
             self.reset()
+            time.sleep(2.0)
         return False
 
     @staticmethod
@@ -215,12 +221,18 @@ class MPCFlightController:
                 + self.config["y0_offset"] / LATLON_DEG_TO_METERS
             )
 
+
+            posi[3] = 0
+            posi[4] = 0
+            posi[5] = 117.86
+
+
             # set the plane at the new reset position, match simulation speed to heading
             self.xp.sendPOSI(posi)
             v = 60.0
             vx, vz = v * math.sin(deg2rad(self.posi0[5])), v * -math.cos(deg2rad(self.posi0[5]))
             self.xp.sendDREFs([utils.SPEEDS["local_vx"], utils.SPEEDS["local_vz"]], [vx, vz])
-            time.sleep(0.5)
+            time.sleep(1)
         self.data = dict()
 
     def get_time_state(self):
@@ -324,7 +336,7 @@ class MPCFlightController:
 
 
 
-        R = np.diag(np.array([10e1, 3e0, 1e2, 1e0])) * 5e3
+        R = np.diag(np.array((cc["r_1"], cc["r_2"], cc["r_3"],cc["r_4"]*0.89)))
         u_ref = np.array([0.0, 0.0, 0.0, 0.0])
 
         ##
@@ -390,7 +402,9 @@ class MPCFlightController:
             u = L @ state + l
         elif self.controller == "mpc":
             #TODO
-            print("Iteration Number : ", self.it)
+            if(self.it%100==1):
+                print("Iteration Number : ", self.it)
+                print(f"Error is : {np.linalg.norm(self.x0 -  self.xs)}")
             if(self.it==0): 
                 self.solver, self.lbx, self.ubx = self._construct_mpc_problem(state)
                 x0 = state[0:11] # initial condition
@@ -411,10 +425,8 @@ class MPCFlightController:
                 sol = self.solver(**args)
                 u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
                 self.x0 = advanceStateNumpy(x0,u1[:,0])
-                print(f"Error is : {np.linalg.norm(self.x0 -  self.xs)}")
                 self.u0 = self.shift(u1)
             u = u1[:,0]
-        print(u)
         u_pitch, u_roll, u_heading, throttle = np.clip(u, [-1, -1, -1, 0], [1, 1, 1, 1])
 
         # landing stage, a poor man's finite state machine #########################################

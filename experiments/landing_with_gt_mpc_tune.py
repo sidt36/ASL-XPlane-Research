@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import random
 from argparse import ArgumentParser
+from ray.tune.schedulers import AsyncHyperBandScheduler
+
 import json
+from ray import tune
 
 import numpy as np
 from tqdm import tqdm
@@ -11,7 +14,10 @@ from ray import tune
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.tune.search import ConcurrencyLimiter
 from ray.air import RunConfig
-
+import decimal
+import time
+from franges import  frange
+from ray.tune.schedulers import ASHAScheduler
 
 from aslxplane import xpc
 from aslxplane.flight_control import utils
@@ -107,6 +113,7 @@ def run_trial_cost(
 ):
     trial_id = random.randint(0, int(1e6) - 1)
     reset_flight(RobustXPlaneConnect(), on_crash_only=False)
+    time.sleep(2.0)
     controller = MPCFlightController(config={"sim_speed": sim_speed},cost_config = cost_config, view=view)
     hist_list, cost_list = [], []
     recorder = None
@@ -153,34 +160,54 @@ def run_trial_cost(
 
     
 
-COST_CONFIG = {
-    "heading_cost": 1e4,
+DEFAULT_COST_CONFIG = {
+    "heading_cost": 1e5,
     "roll_cost": 3e4,
-    "position_cost": 1e0,
-    "altitude_cost": 1e2,
+    "position_cost": 1e0*8,
+    "altitude_cost": 1.12e3,
     "par_cost": 498.863996,
     "perp_cost": 481.605499,
     "perp_quad_cost": 0.002698,
     "par_quad_cost": 1e-3,
+    "r_1":5e2,
+    "r_2":1.5e4,
+    "r_3":5e5,
+    "r_4":1e3
 }
 
 Search_Space = {
-    "heading_cost": tune.grid_search(range(1, 100000,100)),
-    "roll_cost": tune.grid_search(range(1, 100000,100)),
-    "position_cost": tune.grid_search([1e-2,1e-1,1e0,1e1,1e2]),
-    "altitude_cost": tune.grid_search([1e-1,1e0,1e1,1e2,1e3]),
-     "par_cost": 498.863996,
+    "heading_cost": 1e5,
+    "roll_cost": 3e4,
+    "position_cost": tune.grid_search([1e-1,5e-1,1,2,3,5,6,8,25,50]),
+    "altitude_cost": tune.grid_search(list(range(1000,5000,100))),
+    "par_cost": 498.863996,
     "perp_cost": 481.605499,
     "perp_quad_cost": 0.002698,
     "par_quad_cost": 1e-3,
+    "r_1":tune.grid_search(list(range(400,1500,100))),
+    "r_2":tune.grid_search(list(range(1000,20000,2000))),
+    "r_3":tune.grid_search(list(range(50000,1000000,10000))),
+    "r_4":tune.grid_search(list(range(700,1500,100)))
 }
+class TimeBudgetStopper(tune.Stopper):
+    def __init__(self, time_budget_s):
+        self._start_time = time.time()
+        self._time_budget_s = time_budget_s
+
+    def __call__(self, trial_id, result):
+        return time.time() - self._start_time > self._time_budget_s
+
+    def stop_all(self):
+        return time.time() - self._start_time > self._time_budget_s
+
+
 
 def objective(config):
 
     return run_trial_cost(
             config,
             sim_speed=1.0,
-            record_video=True,
+            record_video=False,
             display=False,
             view=xpc.ViewType.FullscreenNoHud,
             # view=xpc.ViewType.Chase,
@@ -191,9 +218,24 @@ def objective(config):
 
 def main():
 
-    tuner = tune.Tuner(objective, param_space=COST_CONFIG)
+    tuner = tune.Tuner(objective, param_space=Search_Space,tune_config=tune.TuneConfig(max_concurrent_trials=1), run_config=RunConfig(
+        stop={"time_total_s": 100},  # 100 seconds
+    ))
 
     results = tuner.fit()
+
+    # stopper = TimeBudgetStopper(time_budget_s=45) 
+    # # scheduler = AsyncHyperBandScheduler(max_concurrent=1)
+    # analysis = tune.run(
+    #     objective,
+    #     config=Search_Space,
+    #     stop=stopper,
+    #     num_samples=1,
+    #     resources_per_trial={"cpu": 16, "gpu": 0},
+    #     local_dir='./ray_results',
+    #     log_to_file=True
+    #     )
+
 
     print(results)
 
