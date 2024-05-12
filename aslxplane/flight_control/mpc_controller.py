@@ -49,16 +49,16 @@ DEFAULT_CONFIG = {
 DEFAULT_COST_CONFIG = {
     "heading_cost": 1e5,
     "roll_cost": 3e4,
-    "position_cost": 1e0*8,
-    "altitude_cost": 1.1e3,
+    "position_cost": 1e0*22,
+    "altitude_cost": 1330.0	,
     "par_cost": 498.863996,
-    "perp_cost": 481.605499,
+    "perp_cost": 915.050448	,
     "perp_quad_cost": 0.002698,
     "par_quad_cost": 1e-3,
     "r_1":10e1*5e3,
     "r_2":3e0*5e3,
     "r_3":1e2*5e3,
-    "r_4":2e-1*5e3
+    "r_4":5e0*5e3
 
 }
 # weird angle misalignment vs runway, perhaps due to in-game magnetic compass distortion
@@ -209,7 +209,7 @@ class MPCFlightController:
 
             posi = list(copy(self.posi0))
             posi[2] = 300
-            dist = 6e3
+            dist = 4.5e3
             # posi[0] += dist / LONLAT_DEG_TO_METERS * -math.cos(deg2rad(posi[5])) + 3e3 / DEG_TO_METERS
             # posi[1] += dist / LONLAT_DEG_TO_METERS * -math.sin(deg2rad(posi[5])) + 3e3 / DEG_TO_METERS
             posi[0] += (
@@ -336,7 +336,7 @@ class MPCFlightController:
 
 
 
-        R = np.diag(np.array((cc["r_1"], cc["r_2"], cc["r_3"],cc["r_4"]*0.89)))
+        R = np.diag(np.array((cc["r_1"], cc["r_2"], cc["r_3"],cc["r_4"])))
         u_ref = np.array([0.0, 0.0, 0.0, 0.0])
 
         ##
@@ -367,9 +367,9 @@ class MPCFlightController:
             + max(np.linalg.norm(v_perp), 1e2) * v_perp / np.linalg.norm(v_perp)
             + d_par * v_par
         )
-        dist = np.linalg.norm(target[:2] - x0[:2])
+        dist = np.linalg.norm(self.target[:2] - x0[:2]) 
         x_ref[2] = min(
-            max(self.posi0[2], self.params["pos_ref"][2] * (dist / 5e3)), 300.0
+            max(self.posi0[2], self.params["pos_ref"][2] * (dist / 6e3)), 300.0
         )  # altitude
         x_ref[3:5] = self.v_ref, 0.0  # velocities
         x_ref[5:8] = self.params["ang_ref"]
@@ -430,7 +430,7 @@ class MPCFlightController:
         u_pitch, u_roll, u_heading, throttle = np.clip(u, [-1, -1, -1, 0], [1, 1, 1, 1])
 
         # landing stage, a poor man's finite state machine #########################################
-        if state[2] < 5.0 or self.data.get("fixed_pitch", None) is not None:
+        if state[2] < 50.0 or self.data.get("fixed_pitch", None) is not None:
             self.data.setdefault("fixed_pitch", u_pitch - 0.05)
             u_pitch, u_roll, u_heading, throttle = self.data["fixed_pitch"], 0.0, 0.0, 0.0
             self.set_brake(1)

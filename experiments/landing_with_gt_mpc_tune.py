@@ -163,31 +163,33 @@ def run_trial_cost(
 DEFAULT_COST_CONFIG = {
     "heading_cost": 1e5,
     "roll_cost": 3e4,
-    "position_cost": 1e0*8,
-    "altitude_cost": 1.12e3,
+    "position_cost": 1e0*15,
+    "altitude_cost": 1.33e3,
     "par_cost": 498.863996,
-    "perp_cost": 481.605499,
+    "perp_cost": 481.605499*1.1,
     "perp_quad_cost": 0.002698,
     "par_quad_cost": 1e-3,
-    "r_1":5e2,
-    "r_2":1.5e4,
-    "r_3":5e5,
-    "r_4":1e3
+    "r_1":10e1*5e3,
+    "r_2":3e0*5e3,
+    "r_3":1e2*5e3,
+    "r_4":5e0*5e3
+
 }
 
+tune.grid_search([1,3,6,8])
 Search_Space = {
     "heading_cost": 1e5,
     "roll_cost": 3e4,
-    "position_cost": tune.grid_search([1e-1,5e-1,1,2,3,5,6,8,25,50]),
-    "altitude_cost": tune.grid_search(list(range(1000,5000,100))),
+    "position_cost": tune.grid_search([9,11,13,15,17,19,22]),
+    "altitude_cost": tune.grid_search([1.31e3,1.33e3,1.35e3,1.37e3,1.4e3]),
     "par_cost": 498.863996,
-    "perp_cost": 481.605499,
+    "perp_cost": tune.grid_search([481.605499*1.1,481.605499*1.3,481.605499*1.5,481.605499*1.9]),
     "perp_quad_cost": 0.002698,
     "par_quad_cost": 1e-3,
-    "r_1":tune.grid_search(list(range(400,1500,100))),
-    "r_2":tune.grid_search(list(range(1000,20000,2000))),
-    "r_3":tune.grid_search(list(range(50000,1000000,10000))),
-    "r_4":tune.grid_search(list(range(700,1500,100)))
+    "r_1":10e1*5e3,
+    "r_2":3e0*5e3,
+    "r_3":1e2*5e3,
+    "r_4":5e0*5e3
 }
 class TimeBudgetStopper(tune.Stopper):
     def __init__(self, time_budget_s):
