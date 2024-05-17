@@ -172,14 +172,15 @@ class MPCFlightController:
             self.it += 1
             is_crashed = self.xp.getDREF("sim/flightmodel2/misc/has_crashed")[0] > 0.0
             if is_crashed:
-                # self.plot_paths()
+                self.plot_paths()
                 reset_flight(self.xp)
                 time.sleep(2.0)
                 return True
         if self.done:
-            # self.plot_paths()
+            self.plot_paths()
             self.reset()
             time.sleep(2.0)
+        self.plot_paths()
         return False
 
     @staticmethod
