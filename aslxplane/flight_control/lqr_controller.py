@@ -314,7 +314,7 @@ class LQRFlightController:
             self.data["cost_approx"] = cost_approx
         Qx, refx = self.data["cost_approx"](x0[:2], np.array(target)[:2], np.array(v_norm))
         x_ref[:2] = refx[:2]
-        Q[:2, :2] = Qx[:2, :2] / 1e3
+        Q[  :2, :2] = Qx[:2, :2] / 1e3
         # augment the cost using automatic differentiation of an Huber-loss-like objective function
 
         # create the control weight and reference ##################################################
@@ -424,7 +424,7 @@ class LQRFlightController:
     def apply_control(self):
         """Compute and apply the control action."""
 
-        state = self.get_curr_state()
+        state = self.get_curr_state(vision=True)
         vis_state = self.get_curr_state(vision=True)
 
         if self.controller == "pid":

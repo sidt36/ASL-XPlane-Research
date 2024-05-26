@@ -90,7 +90,8 @@ class MPCFlightController:
         self.config, self.cost_config = deepcopy(DEFAULT_CONFIG), deepcopy(DEFAULT_COST_CONFIG)
         self.config.update(deepcopy(config))
         self.cost_config.update(deepcopy(cost_config))
-
+        self.error_vec = []
+        self.it_vec = []
         self.xp = RobustXPlaneConnect()
         self.int_state = np.zeros(6)
         self.vis_flight_state, self.use_vision = None, self.config.get("use_vision", None)
@@ -99,6 +100,7 @@ class MPCFlightController:
             self.vis_flight_state = FlightStateWithVision(
                 **self.config.get("vision_config", dict())
             )
+
         while not np.all(np.isfinite(self.flight_state.last_sim_time_and_state[1])):
             time.sleep(1e-1)
         if self.use_vision:
@@ -134,6 +136,7 @@ class MPCFlightController:
 
         self.data = dict()
     def plot_paths(self):
+        plt.figure()
         plt.plot(np.array(self.x_hist)[0,0],np.array(self.x_hist)[0,1],'o')
         plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
         plt.plot(np.array(self.x_hist)[-1,0],np.array(self.x_hist)[-1,1],'x')
@@ -141,7 +144,14 @@ class MPCFlightController:
         plt.xlabel('X')
         plt.ylabel('Y')
         plt.title(f'Path of Aircraft, Open Loop = {self.open_loop}')
-        plt.savefig(str(time.time())+ ".png") 
+        plt.savefig(str(time.time())+ "_path_.png") 
+        if(self.use_vision):
+            plt.figure()
+            plt.plot(self.it_vec,self.error_vec)
+            plt.xlabel('time')
+            plt.ylabel('State Estimation Error')
+            plt.title('Perception_Error')
+            plt.savefig(str(time.time())+ "_error_.png")
     def loop(self, how_long: float = 30) -> None:
         """Apply control in a loop.
 
@@ -162,7 +172,7 @@ class MPCFlightController:
         self.solver = None
         # T = 100.0
         # T = 110.0 / self.config["sim_speed"]
-        dt_small = 1.0 / 50.0
+        dt_small = 1.0 / 100.0
         t_prev = 0.0
         while not self.done and time.time() - t_loop_start < how_long:
             t_prev = time.time()
@@ -354,7 +364,7 @@ class MPCFlightController:
 
     ################################################################################
     def compute_target_state(self,x0):
-        target = self.target[:2] + 400 * np.array(  # 400 meters down the runway from starting point
+        target = self.target[:2] + 300 * np.array(  # 400 meters down the runway from starting point
             [math.cos(self.approach_ang), math.sin(self.approach_ang)]
         )
         x_ref = np.zeros((self.n_states,))
@@ -370,7 +380,7 @@ class MPCFlightController:
         )
         dist = np.linalg.norm(self.target[:2] - x0[:2]) 
         x_ref[2] = min(
-            max(self.posi0[2], self.params["pos_ref"][2] * (dist / 6e3)), 300.0
+            max(self.posi0[2], 15 + self.params["pos_ref"][2] * (dist / 5.5e3)), 300.0
         )  # altitude
         x_ref[3:5] = self.v_ref, 0.0  # velocities
         x_ref[5:8] = self.params["ang_ref"]
@@ -382,17 +392,21 @@ class MPCFlightController:
     def apply_control(self):
         """Compute and apply the control action."""
 
-        state = self.get_curr_state()
+        state = self.get_curr_state(vision=True)
         vis_state = self.get_curr_state(vision=True)
-        
+
+        self.error_vec.append(np.linalg.norm(state - vis_state))
+        self.it_vec.append(self.it*0.01)
+
+
 
         if self.controller == "pid":
             pitch, roll, heading = state[5:8]
             pitch_ref, roll_ref, heading_ref = deg2rad(5.0), 0.0, self.state0[7]
-            u_pitch = -1.0 * (pitch - pitch_ref)
+            u_pitch = -1.0 * (pitch - (pitch_ref + 0.1)) 
             u_roll = -1.0 * (roll - roll_ref)
-            u_heading = -1.0 * (30.0 / state[3]) * (heading - heading_ref)
-            throttle = 0.7
+            u_heading = -1.0 * (50.0 / state[3]) * (heading - heading_ref)
+            throttle = 0.8
             u = np.array([u_pitch, u_roll, u_heading, throttle])
         elif self.controller == "lqr":
             Q, R, x_ref, u_ref = self._construct_lqr_problem(state)
@@ -428,6 +442,7 @@ class MPCFlightController:
                 self.x0 = advanceStateNumpy(x0,u1[:,0])
                 self.u0 = self.shift(u1)
             u = u1[:,0]
+
         u_pitch, u_roll, u_heading, throttle = np.clip(u, [-1, -1, -1, 0], [1, 1, 1, 1])
 
         # landing stage, a poor man's finite state machine #########################################

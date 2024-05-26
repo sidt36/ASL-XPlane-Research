@@ -45,16 +45,17 @@ def run_trial(
     offsets_to_test: list[tuple[int]] = [(0, 0)],
     display: bool = False,
     data_prefix: str | Path = ".",
-    randomize_weather: bool = True,
+    randomize_weather: bool = False,
 ):
     trial_id = random.randint(0, int(1e6) - 1)
     reset_flight(RobustXPlaneConnect(), on_crash_only=False)
     controller = MPCFlightController(config={"sim_speed": sim_speed}, view=view,open_loop=False)
     hist_list, cost_list = [], []
     recorder = None
+    weather_desc = set_the_weather("none","none","day")
     for offset in tqdm(offsets_to_test):
         if randomize_weather:
-            weather_desc = set_the_weather()  # no specification means random
+            weather_desc = set_the_weather("none","none","day")  # no specification means random
             if record_video:
                 weather_path = Path(data_prefix) / Path(f"recording_weather_{trial_id:06d}.json")
                 weather_path.write_text(

@@ -140,11 +140,17 @@ def Return_Objective(Q,R,Np,Nc,X,U,P,n_states,v_norm,cc):
     x_ref = P[0:n_states]
     x_ref[:2] = refx[:2]
     for k in range(Np):
-        st = X[:,k]  -x_ref
-        con = U[:,min(Nc-1,k)]
-        obj = obj+st.T@Q@st + con.T@R@con # calculate obj
+        if(k==Np-1):
+            st = X[:,k]  -x_ref
+            con = U[:,min(Nc-1,k)]
+            obj = obj+st.T@Q@st + con.T@R@con  # calculate obj
 
-    # obj = obj + cost_fn(P[0:n_states],P[n_states:],v_norm)
+        else:
+            st = X[:,k]  -x_ref
+            con = U[:,min(Nc-1,k)]
+            obj = obj+st.T@Q@st + con.T@R@con # calculate obj
+
+     
     
     return obj
 

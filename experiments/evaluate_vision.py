@@ -54,7 +54,7 @@ def run_trial(
         config={
             "sim_speed": sim_speed,
             "use_vision": use_vision,
-            "vision_config": {"camera_id": 2, "model_path": MODEL_PATH},
+            "vision_config": {"camera_id": 0, "model_path": MODEL_PATH},
         },
         view=view,
     )
@@ -71,7 +71,7 @@ def run_trial(
         controller.config.update({"x0_offset": offset[0], "y0_offset": offset[1]})
         if record_video:
             recording_path = Path(data_prefix) / f"recording_{trial_id:06d}"
-            recorder = VideoRecorder(recording_path, controller.flight_state, 2, display=display)
+            recorder = VideoRecorder(recording_path, controller.flight_state, 0, display=display)
         crashed = controller.loop(how_long=abort_at)
         hist = {
             "x": [x.tolist() for x in controller.x_hist],
