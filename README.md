@@ -16,6 +16,6 @@ In our own work, we use it to test on
 
 _____________________________________________________________________
 
-For the purposes of AA203, the developed controllers can be found in aslxplane/flight_control
+## For the purposes of AA203, the developed controllers can be found in aslxplane/flight_control
 
-The files prefixed by mpc are related to the model predictive controller developed for the final project.
+## The files prefixed by mpc are related to the model predictive controller developed for the final project.
