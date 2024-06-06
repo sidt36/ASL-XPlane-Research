@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import sys, os
 from casadi import *
 
+from matplotlib.animation import FuncAnimation
+
 
 os.environ["JAX_PLATFORM_NAME"] = "CPU"
 
@@ -32,6 +34,7 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "False"
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 os.environ["JAX_PLATFORM_NAME"] = "CPU"
 os.environ["JAX_ENABLE_X64"] = "True"
+from mpl_toolkits.mplot3d import Axes3D
 
 from jaxfi import jaxm
 
@@ -135,23 +138,88 @@ class MPCFlightController:
         time.sleep(2.0)
 
         self.data = dict()
+
+    def update(self, i):
+        plt.cla()  # Clear the current axes
+        plt.plot(self.it_vec[0:i], self.error_vec[0:i])
+        plt.xlabel('time')
+        plt.ylabel('State Estimation Error')
+        plt.title('Perception Error')
+
+    def animate(self):
+        fig = plt.figure()
+        ani = FuncAnimation(fig, self.update, frames=range(len(self.error_vec)), repeat=False)
+        ani.save(str(time.time()) + "_error_.gif", writer='ffmpeg', fps=60)
+        plt.show()
+
     def plot_paths(self):
-        plt.figure()
-        plt.plot(np.array(self.x_hist)[0,0],np.array(self.x_hist)[0,1],'o')
-        plt.plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
-        plt.plot(np.array(self.x_hist)[-1,0],np.array(self.x_hist)[-1,1],'x')
-        plt.plot(np.array(self.target)[0],np.array(self.target)[1],'*')
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.title(f'Path of Aircraft, Open Loop = {self.open_loop}')
-        plt.savefig(str(time.time())+ "_path_.png") 
+    # 2D plot
+        # Subplot for X and Y
+        fig, axs = plt.subplots(1, 3, figsize=(15, 4))  # Create a figure with 3 subplots, arranged horizontally
+
+        # Subplot for X and Y
+        axs[0].plot(np.array(self.x_hist)[0,0],np.array(self.x_hist)[0,1],'o', label='Starting point')
+        axs[0].plot(np.array(self.x_hist)[:,0],np.array(self.x_hist)[:,1])
+        axs[0].plot(np.array(self.x_hist)[-1,0],np.array(self.x_hist)[-1,1],'x', label='Finish point')
+        axs[0].plot(np.array(self.target)[0],np.array(self.target)[1],'*', label='Target entry point')
+        axs[0].set_xlabel('X (m)')
+        axs[0].set_ylabel('Y (m)')
+        axs[0].set_title(f'Path of Aircraft, Open Loop = {self.open_loop}')
+        axs[0].legend()  # This line displays the labels
+
+        # Subplot for Z
+        axs[1].plot(np.array(self.x_hist)[:,2])  # Assuming the Z coordinate is the third column in x_hist
+        axs[1].set_xlabel('Time step (s)')
+        axs[1].set_ylabel('Z (m)')
+        axs[1].set_title('Z coordinate over time')
+
+        # Subplot for control inputs
+        control_labels = ['Roll', 'Pitch', 'Yaw', 'Throttle']
+        for i, label in enumerate(control_labels):
+            axs[2].plot(np.array(self.u_hist)[:,i], label=label)  # Assuming u_hist stores the history of control inputs
+        axs[2].set_xlabel('Time step (s)')
+        axs[2].set_ylabel('Control input')
+        axs[2].set_title('MPC input over time')
+        axs[2].legend()  # This line displays the labels
+
+        plt.tight_layout()  # Adjust the layout so that plots do not overlap
+        plt.savefig(str(time.time())+ "_2D_path_.png")        
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot(np.array(self.x_hist)[:,0], np.array(self.x_hist)[:,1], np.array(self.x_hist)[:,2])
+        ax.scatter(np.array(self.x_hist)[0,0],np.array(self.x_hist)[0,1],np.array(self.x_hist)[0,2],'o', label='Initial point')
+        # ax.scatter(np.array(self.x_hist)[-1,0],np.array(self.x_hist)[-1,1],np.array(self.x_hist)[-1,2],'x', label='Final Point')
+        ax.scatter(np.array(self.target)[0],np.array(self.target)[1],np.array(self.x_hist)[-1,2],'*', label='Target')
+        ax.set_xlabel('X (m)')
+        ax.set_ylabel('Y (m)')
+        ax.set_zlabel('Z (m)')
+        ax.set_title('3D Path of Aircraft')
+
+        # # Set the same limits for all axes for nice scaling
+        # max_range = np.array([np.array(self.x_hist)[:,0].max()-np.array(self.x_hist)[:,0].min(), np.array(self.x_hist)[:,1].max()-np.array(self.x_hist)[:,1].min(), np.array(-self.x_hist)[:,2].max()-np.array(-self.x_hist)[:,2].min()]).max() / 2.0
+        # mid_x = (np.array(self.x_hist)[:,0].max()+np.array(self.x_hist)[:,0].min()) * 0.5
+        # mid_y = (np.array(self.x_hist)[:,1].max()+np.array(self.x_hist)[:,1].min()) * 0.5
+        # mid_z = (np.array(-self.x_hist)[:,2].max()+np.array(-self.x_hist)[:,2].min()) * 0.5
+        # ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        # ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        # ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+        ax.legend()  # This line displays the labels 
+
+        plt.tight_layout()
+        plt.show()
+        plt.savefig('3D_path_of_aircraft.png', bbox_inches='tight')    
         if(self.use_vision):
             plt.figure()
-            plt.plot(self.it_vec,self.error_vec)
+            plt.plot(self.it_vec[0:len(self.error_vec)],self.error_vec)
             plt.xlabel('time')
             plt.ylabel('State Estimation Error')
             plt.title('Perception_Error')
             plt.savefig(str(time.time())+ "_error_.png")
+
+            self.animate()
+
+
     def loop(self, how_long: float = 30) -> None:
         """Apply control in a loop.
 
@@ -380,7 +448,7 @@ class MPCFlightController:
         )
         dist = np.linalg.norm(self.target[:2] - x0[:2]) 
         x_ref[2] = min(
-            max(self.posi0[2], 15 + self.params["pos_ref"][2] * (dist / 5.5e3)), 300.0
+            max(self.posi0[2], 10 + self.params["pos_ref"][2] * (dist / 5.5e3)), 300.0
         )  # altitude
         x_ref[3:5] = self.v_ref, 0.0  # velocities
         x_ref[5:8] = self.params["ang_ref"]
@@ -392,21 +460,29 @@ class MPCFlightController:
     def apply_control(self):
         """Compute and apply the control action."""
 
-        state = self.get_curr_state(vision=True)
+        state1 = self.get_curr_state(vision=False)
         vis_state = self.get_curr_state(vision=True)
+        
+        if(self.use_vision):
+            state = vis_state
+        else:
+            state = state1
+        
 
-        self.error_vec.append(np.linalg.norm(state - vis_state))
+        if(state[2]>50):
+            self.error_vec.append(np.linalg.norm(state1 - vis_state))
         self.it_vec.append(self.it*0.01)
+
 
 
 
         if self.controller == "pid":
             pitch, roll, heading = state[5:8]
             pitch_ref, roll_ref, heading_ref = deg2rad(5.0), 0.0, self.state0[7]
-            u_pitch = -1.0 * (pitch - (pitch_ref + 0.1)) 
+            u_pitch = -1.0 * (pitch - (pitch_ref)) + 0.1
             u_roll = -1.0 * (roll - roll_ref)
             u_heading = -1.0 * (50.0 / state[3]) * (heading - heading_ref)
-            throttle = 0.8
+            throttle = 0.7
             u = np.array([u_pitch, u_roll, u_heading, throttle])
         elif self.controller == "lqr":
             Q, R, x_ref, u_ref = self._construct_lqr_problem(state)
@@ -417,10 +493,13 @@ class MPCFlightController:
             u = L @ state + l
         elif self.controller == "mpc":
             #TODO
-            if(self.it%100==1):
+            
+            if(self.it%100==1 and self.it>1):
                 print("Iteration Number : ", self.it)
                 print(f"Error is : {np.linalg.norm(self.x0 -  self.xs)}")
+                print(self.elapsed_time)
             if(self.it==0): 
+                self.elapsed_time  = 1e-9
                 self.solver, self.lbx, self.ubx = self._construct_mpc_problem(state)
                 x0 = state[0:11] # initial condition
                 self.xs = self.compute_target_state(x0)  # reference posture
@@ -431,14 +510,22 @@ class MPCFlightController:
                 self.x0 = advanceStateNumpy(x0,u1[:,0])
                 self.u0 = self.shift(u1)
             else:
+                
                 x0 = state[0:11] # initial condition
+
                 if(self.open_loop):
                     x0 = self.x0
+                
                 self.xs = self.compute_target_state(x0)  # reference posture
                 self.u0 = np.zeros((self.n_controls*self.Nc,))  # control inputs
                 args = {'p': vertcat(x0, self.xs), 'x0': self.u0.reshape(-1, 1), 'lbx': self.lbx, 'ubx': self.ubx}
+                start_time = time.time()
                 sol = self.solver(**args)
+                start_time = time.time()
+
                 u1 = np.array(sol['x']).reshape(self.n_controls,self.Nc)
+                end_time = time.time()
+                self.elapsed_time = max(end_time - start_time,self.elapsed_time)
                 self.x0 = advanceStateNumpy(x0,u1[:,0])
                 self.u0 = self.shift(u1)
             u = u1[:,0]
@@ -453,7 +540,7 @@ class MPCFlightController:
         # landing stage, a poor man's finite state machine #########################################
 
         self.t_hist.append(self.get_curr_time())
-        self.x_hist.append(copy(state))
+        self.x_hist.append(copy(state1))
         self.x_vis_hist.append(copy(vis_state))
         self.u_hist.append(copy(u))
         ctrl = self._build_control(pitch=u_pitch, roll=u_roll, yaw=u_heading, throttle=throttle)

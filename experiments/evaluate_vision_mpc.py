@@ -110,7 +110,7 @@ def run_trial(
 
 def main():
     offsets_to_test = [
-        utils.sample_point_in_triangle(*[(0.0, 0.0), (-2e1, 0.0), (2e1, 0.0)]) for _ in range(1)
+        utils.sample_point_in_triangle(*[(0.0, 0.0), (-2e3, 0.0), (2e3, 0.0)]) for _ in range(1)
     ]
     cost_config = {}
     offset = offsets_to_test[0]
@@ -118,7 +118,7 @@ def main():
     run_trial(
         cost_config,
         sim_speed=1.0,
-        abort_at=120.0,
+        abort_at=60.0,
         record_video=True,
         display=False,
         view=xpc.ViewType.FullscreenNoHud,

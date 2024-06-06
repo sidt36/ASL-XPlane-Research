@@ -427,6 +427,10 @@ class LQRFlightController:
         state = self.get_curr_state(vision=True)
         vis_state = self.get_curr_state(vision=True)
 
+        if(self.use_vision):
+            state = vis_state
+
+
         if self.controller == "pid":
             pitch, roll, heading = state[5:8]
             pitch_ref, roll_ref, heading_ref = deg2rad(5.0), 0.0, self.state0[7]
